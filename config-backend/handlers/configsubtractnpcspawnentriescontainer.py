@@ -1,0 +1,155 @@
+import re
+from collections import OrderedDict
+from confighandlers.configfactory import ARKConfigItemHandler
+from confighandlers.configfactory import cleanup_string
+
+
+class ARKConfigSubtractNPCSpawnEntriesContainer(ARKConfigItemHandler):
+    """
+        TODO(elmorti): Class summary
+    """
+
+    def __init__(self):
+        super().__init__()
+        self._config_item = OrderedDict(
+            {'ConfigSubtractNPCSpawnEntriesContainer': list()})
+        self._config_name = next(iter(self._config_item))
+        self._stack = list()
+
+    @property
+    def config_item(self):
+        return self._config_item
+    
+    @config_item.setter
+    def config_item(self, config_item):
+        super(self, config_item)
+    
+    @config_item.deleter
+    def config_item(self):
+        super(self)
+    
+    @property
+    def config_name(self):
+        super(self)
+    
+    @config_name.setter
+    def config_name(self, value):
+        super(self)
+
+    def add_spawn_entry(self, entry):
+        container = self._config_item.get(self._config_name)
+        container.get('NPCSpawnEntries').append(entry)    
+
+    def add_spawn_limit(self, limit):
+        container = self._config_item.get(self._config_name)
+        container.get('NPCSpawnLimits').append(limit)
+
+    def del_spawn_entry(self, entry_name):
+        container = self._config_item.get(self._config_name)
+        entries = container.get('NPCSpawnEntries')
+        for entry in entries:
+            if entry.get('NPCsToSpawnStrings') == entry_name:
+                del(entry)
+
+    def del_spawn_limit(self, spawn_limit):
+        container = self._config_item[self._config_name]
+        entries = container.get('NPCSpawnLimits')
+        for entry in entries:
+            if entry.get('NPCClassString') == spawn_limit:
+                del(entry)
+
+    def from_string(self, config_string):
+        container_name = re.search(
+            r'NPCSpawnEntriesContainerClassString\=\"\w+\"',
+            config_string).group()
+
+        spawn_class = OrderedDict()
+        container_name = cleanup_string(container_name)
+        spawn_class.update(
+            {k: v for k, v in [container_name.split('=')]}
+            )
+        spawn_class.update({'NPCSpawnEntries': list()})
+        spawn_class.update({'NPCSpawnLimits': list()})
+
+        spawn_entries = re.findall(
+            r'NPCSpawnEntries=.*?'
+            r'(?=,NPCSpawnLimits)',
+            config_string)
+
+        for spawn_entry in spawn_entries:
+            entry_names = re.findall(
+                r'NPCsToSpawnStrings=.*?'
+                r'(?=,\(NPCsToSpawnStrings)'
+                r'|NPCsToSpawnStrings=.*$',
+                spawn_entry)
+
+            for options in entry_names:
+                parsed_options = OrderedDict()
+                for option in options.split(','):
+                    option = cleanup_string(option)
+                    parsed_options.update(
+                        {k: v for k, v in [option.split('=')]}
+                    )
+                spawn_class.get('NPCSpawnEntries').append(parsed_options)
+
+        spawn_limits = re.findall(
+            r'NPCSpawnLimits=.*?'
+            r'(?=,NPCSpawnEntriesContainerClassString)'
+            r'|NPCSpawnLimits.*$',
+            config_string)
+
+        for spawn_limit in spawn_limits:
+            spawn_limits_options = re.findall(
+                r'NPCClassString=.*?'
+                r'(?=,\(NPCClassString)'
+                r'|NPCClassString=.*$',
+                spawn_limit)
+
+            for options in spawn_limits_options:
+                parsed_options = OrderedDict()
+                for option in options.split(','):
+                    option = cleanup_string(option)
+                    parsed_options.update(
+                        {k: v for k, v in [option.split('=')]}
+                    )
+                spawn_class.get('NPCSpawnLimits').append(parsed_options)
+        self._config_item[self._config_name] = spawn_class
+
+    def to_string(self, config_item=None):
+        if not config_item:
+            config_item = self._config_item
+        _items = len(config_item.items())
+        for key, value in config_item.items():
+            if isinstance(value, list):
+                items = len(value)
+                self._stack.append(key + '=(')
+                for item in value:
+                    self._stack.append('(') 
+                    self.to_string(item)
+                    self._stack.append(')')
+                    items = items - 1
+                    if items > 0:
+                        self._stack.append(',')
+                self._stack.append(')')
+
+            elif isinstance(value, str):  # == str:
+                # TODO(elmorti): add code to convert value type to int, float
+                if key == 'NPCsToSpawnStrings':
+                    self._stack.append(key + '=' + '(\"' + value + '\")')
+                else:
+                    self._stack.append(key + '=' + '\"' + value + '\"')
+
+            elif isinstance(value, dict):
+                if key == self._config_name:
+                    self._stack.append(key + '=(')
+                else:
+                    self._stack.append(key + '=')
+                self.to_string(value)
+
+            _items = _items - 1
+            if _items > 0:
+                self._stack.append(',')
+
+        if key == self._config_name:
+            self._stack.append(')')
+        return ''.join(self._stack)
